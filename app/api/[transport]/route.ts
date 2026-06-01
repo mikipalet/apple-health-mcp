@@ -1,0 +1,59 @@
+import { createMcpHandler } from "mcp-handler";
+import { z } from "zod";
+import { secretOk } from "@/lib/auth";
+import { getDb } from "@/lib/db";
+import { listMetrics } from "@/lib/tools/list-metrics";
+import { queryMetric } from "@/lib/tools/query-metric";
+import { listWorkouts } from "@/lib/tools/list-workouts";
+import { queryEvents } from "@/lib/tools/query-events";
+import { latestSnapshot } from "@/lib/tools/latest-snapshot";
+import { healthSql } from "@/lib/tools/health-sql";
+
+export const maxDuration = 60;
+
+// Wrap each tool's JSON result in the MCP text-content envelope.
+const ok = (data: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] });
+const fail = (msg: string) => ({ content: [{ type: "text" as const, text: `Error: ${msg}` }], isError: true });
+
+const handler = createMcpHandler((server) => {
+  server.registerTool("list_metrics",
+    { title: "List metrics", description: "List available Apple Health metric types with units, sample counts, and date ranges.", inputSchema: {} },
+    async () => ok(await listMetrics(getDb())));
+
+  server.registerTool("query_metric",
+    { title: "Query a metric", description: "Query a metric over a date range. aggregation: raw|hourly|daily|avg|sum|min|max.",
+      inputSchema: { name: z.string(), start: z.string(), end: z.string(),
+        aggregation: z.enum(["raw", "hourly", "daily", "avg", "sum", "min", "max"]).default("daily") } },
+    async (a) => ok(await queryMetric(getDb(), a)));
+
+  server.registerTool("list_workouts",
+    { title: "List workouts", description: "List workouts in a date range, optionally filtered by type.",
+      inputSchema: { start: z.string(), end: z.string(), type: z.string().optional() } },
+    async (a) => ok(await listWorkouts(getDb(), a)));
+
+  server.registerTool("query_events",
+    { title: "Query health events", description: "Query long-tail data: ecg, stateOfMind, symptoms, medications, cycleTracking, heartRateNotifications.",
+      inputSchema: { eventType: z.enum(["ecg", "stateOfMind", "symptoms", "medications", "cycleTracking", "heartRateNotifications"]),
+        start: z.string(), end: z.string() } },
+    async (a) => ok(await queryEvents(getDb(), a)));
+
+  server.registerTool("latest_snapshot",
+    { title: "Latest snapshot", description: "Most recent value for every metric — a quick current-status overview.", inputSchema: {} },
+    async () => ok(await latestSnapshot(getDb())));
+
+  server.registerTool("health_sql",
+    { title: "Read-only SQL", description: "Run a single read-only SELECT/WITH query over tables: metric_samples, workouts, health_events.",
+      inputSchema: { query: z.string() } },
+    async ({ query }) => {
+      try { return ok(await healthSql(getDb(), query)); }
+      catch (e) { return fail(e instanceof Error ? e.message : "query failed"); }
+    });
+});
+
+// Gate the whole MCP endpoint on the shared secret (header or ?key).
+async function authed(req: Request): Promise<Response> {
+  if (!secretOk(req)) return Response.json({ error: "unauthorized" }, { status: 401 });
+  return handler(req);
+}
+
+export { authed as GET, authed as POST };
