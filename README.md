@@ -1,0 +1,68 @@
+# apple-health-mcp
+
+A remote [MCP](https://modelcontextprotocol.io) server that exposes your **Apple Watch / Apple Health** data to **every Claude surface** — claude.ai web, Claude Desktop, the Claude mobile app, and Claude Code — with near-fresh data.
+
+Built in public. MIT licensed. Your health data and secrets never live in this repo — only code does.
+
+## How it works
+
+```
+Apple Watch → iPhone HealthKit
+   → Health Auto Export (iOS app) POSTs to /api/ingest every ~hour
+   → Neon Postgres
+   → /api/mcp (remote MCP server, this repo)
+   → Claude (web · desktop · mobile · Claude Code)
+```
+
+HealthKit is iOS-only, so the data is pushed from your iPhone by the
+[Health Auto Export](https://apps.apple.com/app/health-auto-export/id1115567069) app.
+Local MCP servers can't reach claude.ai web/mobile, so this one is remote.
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `list_metrics` | Discover available metrics (units, counts, date ranges) |
+| `query_metric` | Query a metric over a range (raw / hourly / daily / avg / sum / min / max) |
+| `list_workouts` | Workouts in a range, optionally by type |
+| `query_events` | ECG, State of Mind, symptoms, medications, cycle tracking, HR notifications |
+| `latest_snapshot` | Most recent value for every metric |
+| `health_sql` | Read-only `SELECT` over `metric_samples`, `workouts`, `health_events` |
+
+## Self-host
+
+1. **Database** — provision Neon (Vercel Marketplace → Neon) and copy the connection string.
+2. **Deploy** — deploy this repo to Vercel. Set env vars:
+   - `DATABASE_URL` — your Neon string
+   - `MCP_SECRET` — `openssl rand -hex 32`
+3. **Migrate** — `DATABASE_URL=... npm run db:migrate`.
+4. **iOS push** — in Health Auto Export: **Automations → REST API**
+   - URL: `https://<your-app>.vercel.app/api/ingest`
+   - Header: `Authorization: Bearer <MCP_SECRET>`
+   - Format: JSON, all data types, schedule hourly.
+5. **Connect Claude:**
+   - **Web / mobile / desktop:** add a Custom Connector with URL
+     `https://<your-app>.vercel.app/mcp/<MCP_SECRET>`
+   - **Claude Code:**
+     `claude mcp add --transport http apple-health https://<your-app>.vercel.app/api/mcp --header "Authorization: Bearer <MCP_SECRET>"`
+
+## Security notes
+
+- The secret-in-URL form (`/mcp/<secret>`) is what makes claude.ai web/mobile work
+  without OAuth. Treat that URL like a password; it can appear in logs.
+- For extra `health_sql` safety, point `DATABASE_URL` at a Postgres role granted
+  only `SELECT`, or keep a separate read-only role for production.
+- Custom Connectors require a paid Claude plan (Pro/Max/Team/Enterprise).
+
+## Limitations
+
+- iOS background limits make sync periodic (≈ hourly), not real-time.
+- Data is a push from the phone; if the phone is offline, ingestion pauses.
+
+## Develop
+
+```bash
+npm install
+npm test          # Vitest (uses in-memory PGlite, no DB needed)
+npm run dev
+```
