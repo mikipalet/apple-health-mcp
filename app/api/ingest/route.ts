@@ -24,8 +24,16 @@ export async function handleIngest(req: Request, getDbFn: () => Db): Promise<Res
   } catch {
     return Response.json({ error: "invalid JSON" }, { status: 400 });
   }
+  // Diagnostic: log the RAW body shape (before Zod defaults fill missing arrays),
+  // so we can see exactly which keys/sizes each automation actually sends.
+  const rawData = (body as { data?: Record<string, unknown> })?.data ?? {};
+  const rawShape = Object.fromEntries(
+    Object.entries(rawData).map(([k, v]) => [k, Array.isArray(v) ? v.length : typeof v]),
+  );
+  console.log("[ingest] RAW body.data shape:", JSON.stringify(rawShape));
   const parsed = haePayloadSchema.safeParse(body);
   if (!parsed.success) {
+    console.warn("[ingest] validation failed:", JSON.stringify(parsed.error.issues.slice(0, 5)));
     return Response.json({ error: "invalid payload", detail: parsed.error.issues }, { status: 400 });
   }
   const d = parsed.data.data;
