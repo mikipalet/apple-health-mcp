@@ -6,12 +6,15 @@ import { getDb } from "@/lib/db";
 
 export const maxDuration = 60; // App Router: must be a route export, not vercel.json.
 
-// The db param is the structural type persist() accepts, so both the neon-http
+// The db type is the structural shape persist() accepts, so both the neon-http
 // client (prod) and a PGlite client (tests) satisfy it.
 type Db = Parameters<typeof persist>[0];
 
-// Core handler takes the db explicitly so tests can inject a PGlite instance.
-export async function handleIngest(req: Request, db: Db): Promise<Response> {
+// Core handler takes a db *factory* (not a resolved db) so the database is only
+// touched AFTER auth + validation pass. This keeps unauthenticated/malformed
+// requests from opening a DB connection (and from 500ing when DATABASE_URL is
+// absent). Tests inject `() => pgliteDb`.
+export async function handleIngest(req: Request, getDbFn: () => Db): Promise<Response> {
   if (!secretOk(req)) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
@@ -26,11 +29,11 @@ export async function handleIngest(req: Request, db: Db): Promise<Response> {
     return Response.json({ error: "invalid payload", detail: parsed.error.issues }, { status: 400 });
   }
   const normalized = normalize(parsed.data);
-  const summary = await persist(db, normalized);
+  const summary = await persist(getDbFn(), normalized);
   // 200 with a summary so Health Auto Export never retry-storms on partial skips.
   return Response.json({ ...summary, skipped: normalized.skipped }, { status: 200 });
 }
 
 export function POST(req: Request) {
-  return handleIngest(req, getDb());
+  return handleIngest(req, getDb);
 }

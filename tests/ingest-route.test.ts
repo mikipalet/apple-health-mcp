@@ -17,14 +17,14 @@ function post(body: unknown, headers: Record<string, string> = {}) {
 describe("handleIngest", () => {
   it("401s without the secret", async () => {
     const db = await makeTestDb();
-    const res = await handleIngest(post({ data: { metrics: [] } }), db);
+    const res = await handleIngest(post({ data: { metrics: [] } }), () => db);
     expect(res.status).toBe(401);
   });
 
   it("stores metrics and returns a summary", async () => {
     const db = await makeTestDb();
     const body = { data: { metrics: [{ name: "step_count", units: "count", data: [{ date: D, qty: 100 }] }] } };
-    const res = await handleIngest(post(body, { authorization: "Bearer s3cr3t" }), db);
+    const res = await handleIngest(post(body, { authorization: "Bearer s3cr3t" }), () => db);
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ metricsStored: 1 });
     expect(await db.select().from(metricSamples)).toHaveLength(1);
@@ -32,7 +32,14 @@ describe("handleIngest", () => {
 
   it("400s on a malformed body", async () => {
     const db = await makeTestDb();
-    const res = await handleIngest(post(42, { authorization: "Bearer s3cr3t" }), db);
+    const res = await handleIngest(post(42, { authorization: "Bearer s3cr3t" }), () => db);
     expect(res.status).toBe(400);
+  });
+
+  it("does not resolve the db when auth fails", async () => {
+    let resolved = false;
+    const res = await handleIngest(post({ data: {} }), () => { resolved = true; return null as never; });
+    expect(res.status).toBe(401);
+    expect(resolved).toBe(false);
   });
 });
