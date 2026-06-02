@@ -24,28 +24,12 @@ export async function handleIngest(req: Request, getDbFn: () => Db): Promise<Res
   } catch {
     return Response.json({ error: "invalid JSON" }, { status: 400 });
   }
-  // Diagnostic: log the RAW body shape (before Zod defaults fill missing arrays),
-  // so we can see exactly which keys/sizes each automation actually sends.
-  const rawData = (body as { data?: Record<string, unknown> })?.data ?? {};
-  const rawShape = Object.fromEntries(
-    Object.entries(rawData).map(([k, v]) => [k, Array.isArray(v) ? v.length : typeof v]),
-  );
-  console.log("[ingest] RAW body.data shape:", JSON.stringify(rawShape));
   const parsed = haePayloadSchema.safeParse(body);
   if (!parsed.success) {
+    // Log validation failures so unexpected HAE payload shapes are diagnosable.
     console.warn("[ingest] validation failed:", JSON.stringify(parsed.error.issues.slice(0, 5)));
     return Response.json({ error: "invalid payload", detail: parsed.error.issues }, { status: 400 });
   }
-  const d = parsed.data.data;
-  // Diagnostic: log the shape of every incoming payload so we can see exactly what
-  // each Health Auto Export automation sends (which arrays, how many items).
-  console.log("[ingest] received", JSON.stringify({
-    metrics: d.metrics.length, workouts: d.workouts.length, ecg: d.ecg.length,
-    stateOfMind: d.stateOfMind.length, symptoms: d.symptoms.length,
-    medications: d.medications.length, cycleTracking: d.cycleTracking.length,
-    heartRateNotifications: d.heartRateNotifications.length,
-    topLevelKeys: Object.keys(parsed.data.data),
-  }));
   const normalized = normalize(parsed.data);
   try {
     const summary = await persist(getDbFn(), normalized);
