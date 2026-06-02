@@ -40,16 +40,25 @@ Local MCP servers can't reach claude.ai web/mobile, so this one is remote.
    - URL: `https://<your-app>.vercel.app/api/ingest`
    - Header: `Authorization: Bearer <MCP_SECRET>`
    - Format: JSON, all data types, schedule hourly.
-5. **Connect Claude:**
-   - **Web / mobile / desktop:** add a Custom Connector with URL
-     `https://<your-app>.vercel.app/mcp/<MCP_SECRET>`
+5. **Connect Claude** — same URL everywhere: `https://<your-app>.vercel.app/api/mcp`
+   - **Web / mobile / desktop (claude.ai):** add a Custom Connector with that URL.
+     claude.ai requires OAuth, which this server implements: when prompted to sign
+     in, an **Authorize** page opens — enter your `MCP_SECRET` as the access secret.
+     That issues a 90-day token; no per-request URL secret.
    - **Claude Code:**
      `claude mcp add --transport http apple-health https://<your-app>.vercel.app/api/mcp --header "Authorization: Bearer <MCP_SECRET>"`
 
+## Auth model
+
+- **Claude Code / ingest** use the static `MCP_SECRET` as a bearer (or `?key=`).
+- **claude.ai web/mobile/desktop** require OAuth, so the server ships a minimal,
+  stateless OAuth 2.1 layer (discovery, dynamic client registration, PKCE). The
+  `/authorize` step is gated by `MCP_SECRET` (entered as a password), so only the
+  secret-holder can mint a token. Codes and tokens are HMAC-signed — no DB, no deps.
+
 ## Security notes
 
-- The secret-in-URL form (`/mcp/<secret>`) is what makes claude.ai web/mobile work
-  without OAuth. Treat that URL like a password; it can appear in logs.
+- Treat `MCP_SECRET` like a password: it's the ingest bearer *and* the OAuth login.
 - For extra `health_sql` safety, point `DATABASE_URL` at a Postgres role granted
   only `SELECT`, or keep a separate read-only role for production.
 - Custom Connectors require a paid Claude plan (Pro/Max/Team/Enterprise).
