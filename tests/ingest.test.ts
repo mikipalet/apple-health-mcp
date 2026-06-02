@@ -56,6 +56,19 @@ describe("normalize", () => {
     expect(workoutRows[0].raw).toBeDefined();
   });
 
+  it("handles workout fields that arrive as arrays (e.g. stepCount) without rejecting", () => {
+    const { workoutRows } = normalize({
+      data: { metrics: [], workouts: [{
+        id: "w2", name: "Walking", start: D, end: D, duration: 600,
+        activeEnergyBurned: { qty: 50, units: "kcal" },
+        // HAE can send stepCount as an array of per-interval samples:
+        stepCount: [{ date: D, qty: 100 }, { date: D, qty: 200 }],
+      }], ecg: [], stateOfMind: [], symptoms: [], medications: [], cycleTracking: [], heartRateNotifications: [] },
+    });
+    expect(workoutRows).toHaveLength(1);
+    expect(workoutRows[0]).toMatchObject({ id: "w2", activeEnergy: "50", stepCount: "300" }); // summed
+  });
+
   it("maps long-tail arrays into eventRows tagged by type", () => {
     const { eventRows } = normalize({
       data: { metrics: [], workouts: [],

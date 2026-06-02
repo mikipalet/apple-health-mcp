@@ -61,6 +61,30 @@ const EVENT_TYPES = [
   "ecg", "stateOfMind", "symptoms", "medications", "cycleTracking", "heartRateNotifications",
 ] as const;
 
+// Workout value fields are usually `{ qty, units }` objects, but some (e.g.
+// stepCount) arrive as arrays of per-interval samples. Extract a scalar total:
+// read `.qty` from an object, or sum `.qty` across an array.
+function workoutQty(v: unknown): string | null {
+  if (Array.isArray(v)) {
+    let sum = 0;
+    let seen = false;
+    for (const item of v) {
+      const q = (item as { qty?: unknown })?.qty;
+      if (typeof q === "number" && Number.isFinite(q)) { sum += q; seen = true; }
+    }
+    return seen ? String(sum) : null;
+  }
+  if (v && typeof v === "object") return num((v as { qty?: unknown }).qty);
+  return null;
+}
+
+// Units live on the value-object (or the first element of an array form).
+function workoutUnits(v: unknown): string | null {
+  const obj = Array.isArray(v) ? v[0] : v;
+  const u = (obj as { units?: unknown })?.units;
+  return typeof u === "string" ? u : null;
+}
+
 function safeDate(s: unknown): Date | null {
   if (typeof s !== "string") return null;
   try {
@@ -107,13 +131,13 @@ export function normalize(payload: HaePayload): NormalizeResult {
       start: safeDate(w.start),
       end: safeDate(w.end),
       durationS: num(w.duration),
-      activeEnergy: num(w.activeEnergyBurned?.qty),
-      activeEnergyUnits: w.activeEnergyBurned?.units ?? null,
-      distance: num(w.distance?.qty),
-      distanceUnits: w.distance?.units ?? null,
-      avgHr: num(w.avgHeartRate?.qty),
-      maxHr: num(w.maxHeartRate?.qty),
-      stepCount: num(w.stepCount?.qty),
+      activeEnergy: workoutQty(w.activeEnergyBurned),
+      activeEnergyUnits: workoutUnits(w.activeEnergyBurned),
+      distance: workoutQty(w.distance),
+      distanceUnits: workoutUnits(w.distance),
+      avgHr: workoutQty(w.avgHeartRate),
+      maxHr: workoutQty(w.maxHeartRate),
+      stepCount: workoutQty(w.stepCount),
       route: Array.isArray(w.route) ? w.route : null,
       raw: w,
     });

@@ -12,21 +12,12 @@ const metric = z.object({
   data: z.array(point).default([]),
 });
 
-const valueWithUnits = z.object({ qty: z.number(), units: z.string().optional() }).passthrough();
-
-const workout = z.object({
-  id: z.string(),
-  name: z.string().optional(),
-  start: z.string().optional(),
-  end: z.string().optional(),
-  duration: z.number().optional(),
-  activeEnergyBurned: valueWithUnits.optional(),
-  distance: valueWithUnits.optional(),
-  avgHeartRate: valueWithUnits.optional(),
-  maxHeartRate: valueWithUnits.optional(),
-  stepCount: valueWithUnits.optional(),
-  route: z.array(z.record(z.string(), z.unknown())).optional(),
-}).passthrough();
+// Workouts carry a mix of scalar value-objects ({ qty, units }) and time-series
+// arrays (e.g. stepCount can be an array of per-interval samples). Validating those
+// field shapes strictly rejects real HAE payloads, so we only require an `id` and
+// pass everything else through; the normalizer (lib/ingest.ts) extracts defensively
+// and preserves the full original object in `raw`.
+const workout = z.object({ id: z.string() }).passthrough();
 
 const event = z.object({ date: z.string().optional() }).passthrough();
 
