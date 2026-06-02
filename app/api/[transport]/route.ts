@@ -1,6 +1,7 @@
 import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
-import { secretOk } from "@/lib/auth";
+import { isAuthorized } from "@/lib/auth";
+import { baseUrl } from "@/lib/oauth";
 import { getDb } from "@/lib/db";
 import { listMetrics } from "@/lib/tools/list-metrics";
 import { queryMetric } from "@/lib/tools/query-metric";
@@ -55,9 +56,20 @@ const handler = createMcpHandler((server) => {
   maxDuration: 60,
 });
 
-// Gate the whole MCP endpoint on the shared secret (header or ?key).
+// Gate the MCP endpoint. Accept the static secret (Claude Code / ?key) OR a valid
+// OAuth access token (claude.ai web/mobile). On rejection, return a 401 with a
+// WWW-Authenticate challenge pointing at our protected-resource metadata, which is
+// what makes claude.ai start the OAuth flow.
 async function authed(req: Request): Promise<Response> {
-  if (!secretOk(req)) return Response.json({ error: "unauthorized" }, { status: 401 });
+  if (!isAuthorized(req)) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: {
+        "content-type": "application/json",
+        "WWW-Authenticate": `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource"`,
+      },
+    });
+  }
   return handler(req);
 }
 
