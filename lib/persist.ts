@@ -15,16 +15,28 @@ export type IngestSummary = {
   eventsStored: number;
 };
 
+// Postgres caps a single statement at 65535 bind parameters. metric_samples has
+// 11 bound columns/row, so a single INSERT tops out at ~5957 rows. A first Health
+// Auto Export sync sends far more, so we chunk well under that limit. 1000 rows ×
+// 11 = 11000 params — safe with headroom.
+const METRIC_CHUNK = 1000;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 // Persist normalized rows idempotently:
 // - metric_samples: ON CONFLICT (metric_name,date,source) DO NOTHING (unique index).
 // - workouts: ON CONFLICT (id) DO UPDATE (latest wins).
 // - health_events: delete existing rows matching (event_type,date,payload) then insert,
 //   since a portable jsonb-hash unique index isn't available across drivers.
 export async function persist(db: Db, data: NormalizeResult): Promise<IngestSummary> {
-  if (data.metricRows.length) {
+  for (const batch of chunk(data.metricRows, METRIC_CHUNK)) {
     await db
       .insert(metricSamples)
-      .values(data.metricRows)
+      .values(batch)
       .onConflictDoNothing({
         target: [metricSamples.metricName, metricSamples.date, metricSamples.source],
       });
