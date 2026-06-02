@@ -48,6 +48,11 @@ const handler = createMcpHandler((server) => {
       try { return ok(await healthSql(getDb(), query)); }
       catch (e) { return fail(e instanceof Error ? e.message : "query failed"); }
     });
+}, undefined, {
+  // basePath MUST match where the [transport] segment is mounted, else the handler
+  // 404s every request. Our route lives at app/api/[transport]/route.ts → "/api".
+  basePath: "/api",
+  maxDuration: 60,
 });
 
 // Gate the whole MCP endpoint on the shared secret (header or ?key).
