@@ -28,6 +28,16 @@ export async function handleIngest(req: Request, getDbFn: () => Db): Promise<Res
   if (!parsed.success) {
     return Response.json({ error: "invalid payload", detail: parsed.error.issues }, { status: 400 });
   }
+  const d = parsed.data.data;
+  // Diagnostic: log the shape of every incoming payload so we can see exactly what
+  // each Health Auto Export automation sends (which arrays, how many items).
+  console.log("[ingest] received", JSON.stringify({
+    metrics: d.metrics.length, workouts: d.workouts.length, ecg: d.ecg.length,
+    stateOfMind: d.stateOfMind.length, symptoms: d.symptoms.length,
+    medications: d.medications.length, cycleTracking: d.cycleTracking.length,
+    heartRateNotifications: d.heartRateNotifications.length,
+    topLevelKeys: Object.keys(parsed.data.data),
+  }));
   const normalized = normalize(parsed.data);
   try {
     const summary = await persist(getDbFn(), normalized);
